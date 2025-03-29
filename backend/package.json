@@ -1,0 +1,21 @@
+{
+  "name": "chat-app-backend",
+  "version": "1.0.0",
+  "description": "Chat application with MongoDB, Socket.io, Express.js",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^10.0.0",
+    "express": "^4.17.1",
+    "mongoose": "^5.10.9",
+    "socket.io": "^4.1.2"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "author": "",
+  "license": "ISC"
+}
