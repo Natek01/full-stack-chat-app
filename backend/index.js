@@ -1,37 +1,57 @@
-const express = require("express");
-const http = require("http");
-const cors = require("cors");
-const { Server } = require("socket.io");
+import express from "express";
+import http from "http";
+import cors from "cors";
+import { Server } from "socket.io";
 
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors()); // Enable CORS for frontend requests
+app.use(cors());
 
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173", // Adjust for your frontend
+        origin: "http://localhost:5173",
         methods: ["GET", "POST"]
     }
 });
 
-const activeUsers = new Map(); // Store connected users
+const users = new Map(); // Store users { socket.id: { username, avatar } }
 
 io.on("connection", (socket) => {
-    console.log(`⚡ User connected: ${socket.id}`);
+    console.log(`User connected: ${socket.id}`);
 
-    socket.on("join", (username) => {
-        activeUsers.set(socket.id, username);
-        console.log(`✅ ${username} joined the chat`);
+    socket.on("join", ({ username, avatar }) => {
+        users.set(socket.id, { username, avatar, id: socket.id }); // Include socket.id in user object
+        io.emit("update_users", Array.from(users.values()));
+        console.log(`${username} joined with avatar`);
     });
 
     socket.on("send_message", (message) => {
-        io.emit("receive_message", message);
+        const messageWithTimeStamp = {
+            ...message,
+            timeStamp: new Date().toISOString()
+        };
+        io.emit("receive_message", messageWithTimeStamp);
     });
 
-    // Typing indicator (sent to other users only)
+    socket.on("send_private_message", ({ recipientId, message }) => {
+        const sender = users.get(socket.id);
+        const recipient = users.get(recipientId);
+        if (recipient) {
+            const privateMessage = {
+                text: message,
+                sender: sender.username,
+                timeStamp: new Date().toISOString(),
+                isPrivate: true,
+                recipient: recipient.username // Include recipient for clarity
+            };
+            socket.to(recipientId).emit("receive_private_message", privateMessage);
+            socket.emit("receive_private_message", privateMessage); // Echo back to sender
+        }
+    });
+
     socket.on("typing", (username) => {
-        socket.broadcast.emit("user_typing", username); // Sent to everyone except the sender
+        socket.broadcast.emit("user_typing", username);
     });
 
     socket.on("stop_typing", () => {
@@ -39,20 +59,16 @@ io.on("connection", (socket) => {
     });
 
     socket.on("disconnect", () => {
-        const username = activeUsers.get(socket.id);
-        if (username) {
-            console.log(`❌ ${username} disconnected`);
-            activeUsers.delete(socket.id);
+        const user = users.get(socket.id);
+        if (user) {
+            console.log(`${user.username} disconnected`);
+            users.delete(socket.id);
+            io.emit("update_users", Array.from(users.values())); // Update UI
         }
     });
 });
 
-// Default route
-app.get("/", (req, res) => {
-    res.send("Chat Server Running");
-});
-
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
