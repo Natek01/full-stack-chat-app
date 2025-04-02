@@ -19,23 +19,18 @@ const Chat = () => {
         socket.on("receive_message", (data) => {
             setMessages((prevMessages) => [...prevMessages, data]);
         });
-
         socket.on("receive_private_message", (data) => {
             setMessages((prevMessages) => [...prevMessages, data]);
         });
-
         socket.on("user_typing", (user) => {
             setTypingUser(user);
         });
-
         socket.on("user_stopped_typing", () => {
             setTypingUser(null);
         });
-
         socket.on("update_users", (userList) => {
             setUsers(userList);
         });
-
         return () => {
             socket.off("receive_message");
             socket.off("receive_private_message");
@@ -111,7 +106,7 @@ const Chat = () => {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white p-4">
+        <div className="flex  items-center justify-center h-screen bg-gray-900 text-white p-4">
             <div className="w-full max-w-lg mx-auto bg-gray-800 rounded-lg shadow-lg p-6">
                 {!isUserLoggedIn ? (
                     <div className="text-center flex flex-col items-center justify-center">
