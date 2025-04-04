@@ -10,8 +10,9 @@ const Chat = () => {
     const [typingUser, setTypingUser] = useState(null);
     const [isUserLoggedIn, setIsUserLoggedIn] = useState(false);
     const [previewAvatar, setPreviewAvatar] = useState(null);
-    const [users, setUsers] = useState([]); // List of connected users
-    const [privateRecipient, setPrivateRecipient] = useState(null); // Selected recipient for private messaging
+    const [users, setUsers] = useState([]);
+    const [privateRecipient, setPrivateRecipient] = useState(null);
+    const [unreadMessages, setUnreadMessages] = useState({});
 
     const chatEndRef = useRef(null);
 
@@ -20,7 +21,23 @@ const Chat = () => {
             setMessages((prevMessages) => [...prevMessages, data]);
         });
         socket.on("receive_private_message", (data) => {
-            setMessages((prevMessages) => [...prevMessages, data]);
+            setMessages((prevMessages) => {
+                const updatedMessages = [...prevMessages, data];
+                const senderId = users.find((u) => u.username === data.sender)?.id;
+                // Increment unread count only if this user is the recipient and not viewing the sender’s chat
+                if (
+                    senderId &&
+                    data.recipient === username && // This user is the recipient
+                    senderId !== privateRecipient && // Not currently viewing this sender’s chat
+                    data.text // Ensure it’s a text message
+                ) {
+                    setUnreadMessages((prev) => ({
+                        ...prev,
+                        [senderId]: (prev[senderId] || 0) + 1
+                    }));
+                }
+                return updatedMessages;
+            });
         });
         socket.on("user_typing", (user) => {
             setTypingUser(user);
@@ -38,7 +55,7 @@ const Chat = () => {
             socket.off("user_stopped_typing");
             socket.off("update_users");
         };
-    }, []);
+    }, [privateRecipient, username, users]);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -47,7 +64,7 @@ const Chat = () => {
     const handleLogin = () => {
         if (username.trim()) {
             setIsUserLoggedIn(true);
-            const profile = { username, avatar: previewAvatar || "👤" };
+            const profile = { username:username, avatar: previewAvatar || "👤" };
             socket.emit("join", profile);
         }
     };
@@ -64,7 +81,7 @@ const Chat = () => {
                 socket.emit("send_message", newMessage);
             }
             setMessage("");
-            socket.emit("stop_typing");
+            socket.emit("stop_typing", { recipientId: privateRecipient });
         }
     };
 
@@ -81,14 +98,18 @@ const Chat = () => {
 
     const handleTyping = (e) => {
         setMessage(e.target.value);
-        socket.emit("typing", username);
+        socket.emit("typing", { username, recipientId: privateRecipient });
         setTimeout(() => {
-            socket.emit("stop_typing");
+            socket.emit("stop_typing", { recipientId: privateRecipient });
         }, 2000);
     };
 
     const startPrivateChat = (recipientId) => {
         setPrivateRecipient(recipientId);
+        setUnreadMessages((prev) => ({
+            ...prev,
+            [recipientId]: 0
+        }));
     };
 
     const exitPrivateChat = () => {
@@ -105,8 +126,17 @@ const Chat = () => {
         });
     };
 
+    const displayedMessages = privateRecipient
+        ? messages.filter(
+              (msg) =>
+                  msg.isPrivate &&
+                  ((msg.sender === username && msg.recipient === users.find((u) => u.id === privateRecipient)?.username) ||
+                   (msg.sender === users.find((u) => u.id === privateRecipient)?.username && msg.recipient === username))
+          )
+        : messages.filter((msg) => !msg.isPrivate);
+
     return (
-        <div className="flex  items-center justify-center h-screen bg-gray-900 text-white p-4">
+        <div className="flex items-center justify-center h-screen bg-gray-900 text-white p-4">
             <div className="w-full max-w-lg mx-auto bg-gray-800 rounded-lg shadow-lg p-6">
                 {!isUserLoggedIn ? (
                     <div className="text-center flex flex-col items-center justify-center">
@@ -131,7 +161,7 @@ const Chat = () => {
                             ) : (
                                 <img
                                     src={previewAvatar}
-                                    alt="Avatar Preview"
+                                    alt="Avatar Preview for profile image"
                                     className="w-full h-full mx-auto rounded-full border border-gray-500 object-cover"
                                 />
                             )}
@@ -157,9 +187,11 @@ const Chat = () => {
                                     <span className="text-2xl">👤</span>
                                 )}
                             </div>
-                            <p className="text-lg font-bold">{username}</p>
+                            <p className="text-xl font-bold">{username}</p>
                         </div>
-                        <h2 className="text-center text-xl font-bold mb-2">💬 Chat Room</h2>
+                        <h2 className="text-center text-xl font-bold mb-2">
+                            💬 {privateRecipient ? `Private Chat with ${users.find((u) => u.id === privateRecipient)?.username}` : "Chat Room"}
+                        </h2>
 
                         {/* User List for Private Messaging */}
                         <div className="mb-4">
@@ -168,24 +200,29 @@ const Chat = () => {
                                 {users
                                     .filter((user) => user.username !== username)
                                     .map((user) => (
-                                        <button
-                                            key={user.id}
-                                            onClick={() => startPrivateChat(user.id)}
-                                            className={`p-2 rounded-md ${
-                                                privateRecipient === user.id
-                                                    ? "bg-blue-600"
-                                                    : "bg-gray-700"
-                                            } hover:bg-blue-500`}
-                                        >
-                                            {user.username}
-                                        </button>
+                                        <div key={user.id} className="relative">
+                                            <button
+                                                onClick={() => startPrivateChat(user.id)}
+                                                className={`p-2 rounded-md ${
+                                                    privateRecipient === user.id
+                                                        ? "bg-blue-600"
+                                                        : "bg-gray-700"
+                                                } hover:bg-blue-500`}
+                                            >
+                                                {user.username}
+                                            </button>
+                                            {unreadMessages[user.id] > 0 && (
+                                                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                                                    {unreadMessages[user.id]}
+                                                </span>
+                                            )}
+                                        </div>
                                     ))}
                             </div>
                             {privateRecipient && (
                                 <div className="mt-2">
                                     <span className="text-sm text-gray-400">
-                                        Chatting privately with:{" "}
-                                        {users.find((u) => u.id === privateRecipient)?.username}
+                                        Chatting privately with: {users.find((u) => u.id === privateRecipient)?.username}
                                     </span>
                                     <button
                                         onClick={exitPrivateChat}
@@ -198,13 +235,11 @@ const Chat = () => {
                         </div>
 
                         <div className="h-80 overflow-y-auto border border-gray-700 p-2 rounded-lg">
-                            {messages.map((msg, index) => (
+                            {displayedMessages.map((msg, index) => (
                                 <div
                                     key={index}
                                     className={`flex ${
-                                        msg.sender === username
-                                            ? "justify-end"
-                                            : "justify-start"
+                                        msg.sender === username ? "justify-end" : "justify-start"
                                     } my-2`}
                                 >
                                     <div
@@ -240,7 +275,7 @@ const Chat = () => {
                                 onChange={handleTyping}
                                 placeholder={
                                     privateRecipient
-                                        ? "Type a private message..."
+                                        ? `Message ${users.find((u) => u.id === privateRecipient)?.username}...`
                                         : "Type a message..."
                                 }
                                 className="flex-1 p-2 rounded-md bg-gray-700 text-white border border-gray-600 focus:outline-none"
